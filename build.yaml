@@ -10,7 +10,7 @@ description: >
   available and enables seamless switching between them during playback via an
   overlay in the Jellyfin video player.
 category: "General"
-owner: "spidernoir"
+owner: "zakattack02"
 artifacts:
   - "Jellyfin.Plugin.SpiderNoir.dll"
 changelog: >

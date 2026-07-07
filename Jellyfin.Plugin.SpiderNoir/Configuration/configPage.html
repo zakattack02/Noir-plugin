@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>SpiderNoir</title>
+</head>
+<body>
+    <div id="SpiderNoirConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="SpiderNoirConfigForm">
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="VersionNaming">Version Naming Convention</label>
+                        <select is="emby-select" id="VersionNaming" name="VersionNaming" class="emby-select-withcolor emby-select">
+                            <option id="optSuffix" value="SuffixBased">Suffix-Based (e.g. S01E01 - Noir.mkv)</option>
+                            <option id="optFolder" value="FolderBased">Folder-Based (Color/Noir subdirs)</option>
+                            <option id="optCustom" value="Custom">Custom Pattern</option>
+                        </select>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NoirSuffix">Noir (B&W) Suffix</label>
+                        <input id="NoirSuffix" name="NoirSuffix" type="text" is="emby-input" />
+                        <div class="fieldDescription">File suffix that identifies the Black & White version (e.g. "Noir" or "B&W")</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ColorSuffix">Color Suffix</label>
+                        <input id="ColorSuffix" name="ColorSuffix" type="text" is="emby-input" />
+                        <div class="fieldDescription">File suffix that identifies the Color version (e.g. "Color")</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SeriesNamePattern">Series Name Pattern</label>
+                        <input id="SeriesNamePattern" name="SeriesNamePattern" type="text" is="emby-input" />
+                        <div class="fieldDescription">Series name to match for auto-detection (e.g. "SpiderNoir")</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="AutoDetectSpiderNoirSeries" name="AutoDetectCheckBox" type="checkbox" is="emby-checkbox" />
+                            <span>Auto-Detect SpiderNoir Series</span>
+                        </label>
+                        <div class="fieldDescription">Automatically detect SpiderNoir series by name pattern</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnablePlayerOverlay" name="EnableOverlayCheckBox" type="checkbox" is="emby-checkbox" />
+                            <span>Enable Player Overlay</span>
+                        </label>
+                        <div class="fieldDescription">Show version switch overlay in the video player</div>
+                    </div>
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            var SpiderNoirConfig = {
+                pluginUniqueId: '3bd33ef7-dd55-485b-9487-8bce0b52bd55'
+            };
+
+            document.querySelector('#SpiderNoirConfigPage')
+                .addEventListener('pageshow', function() {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(SpiderNoirConfig.pluginUniqueId).then(function (config) {
+                        document.querySelector('#VersionNaming').value = config.VersionNaming;
+                        document.querySelector('#NoirSuffix').value = config.NoirSuffix;
+                        document.querySelector('#ColorSuffix').value = config.ColorSuffix;
+                        document.querySelector('#SeriesNamePattern').value = config.SeriesNamePattern;
+                        document.querySelector('#AutoDetectSpiderNoirSeries').checked = config.AutoDetectSpiderNoirSeries;
+                        document.querySelector('#EnablePlayerOverlay').checked = config.EnablePlayerOverlay;
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            document.querySelector('#SpiderNoirConfigForm')
+                .addEventListener('submit', function(e) {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(SpiderNoirConfig.pluginUniqueId).then(function (config) {
+                    config.VersionNaming = document.querySelector('#VersionNaming').value;
+                    config.NoirSuffix = document.querySelector('#NoirSuffix').value;
+                    config.ColorSuffix = document.querySelector('#ColorSuffix').value;
+                    config.SeriesNamePattern = document.querySelector('#SeriesNamePattern').value;
+                    config.AutoDetectSpiderNoirSeries = document.querySelector('#AutoDetectSpiderNoirSeries').checked;
+                    config.EnablePlayerOverlay = document.querySelector('#EnablePlayerOverlay').checked;
+                    ApiClient.updatePluginConfiguration(SpiderNoirConfig.pluginUniqueId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                });
+
+                e.preventDefault();
+                return false;
+            });
+        </script>
+    </div>
+</body>
+</html>

@@ -1,66 +1,72 @@
-# Jellyfin Plugin Template
+# SpiderNoir Jellyfin Plugin
 
-Jellyfin plugin template targeting **net9.0** with C#. The actual plugin project lives under `Jellyfin.Plugin.Template/`.
+Jellyfin plugin that enables switching between Black & White (Noir) and Color versions of SpiderNoir series episodes from the video player.
+
+Targets **net9.0** with C#. Project lives under `Jellyfin.Plugin.SpiderNoir/`.
 
 ## Build & Test
 
 ```bash
 # Build solution
-dotnet build Jellyfin.Plugin.Template.sln
+dotnet build Jellyfin.Plugin.SpiderNoir.sln
 
-# Publish (used for deployment to server)
-dotnet publish Jellyfin.Plugin.Template.sln --configuration=Debug
+# Publish (for deployment to server's plugin directory)
+dotnet publish Jellyfin.Plugin.SpiderNoir.sln --configuration Debug
 
-# Or with full paths (for VS Code problem matcher):
-dotnet build Jellyfin.Plugin.Template.sln /property:GenerateFullPaths=true /consoleloggerparameters:NoSummary
+# With full paths for VS Code problem matcher:
+dotnet build Jellyfin.Plugin.SpiderNoir.sln /property:GenerateFullPaths=true /consoleloggerparameters:NoSummary
 ```
 
-There are **no unit tests** in this template. The CI test workflow (`test.yaml`) delegates to `jellyfin/jellyfin-meta-plugins`.
+No unit tests in this template. CI delegates to `jellyfin/jellyfin-meta-plugins`.
 
 ## Project structure
 
-- `Jellyfin.Plugin.Template/Plugin.cs` — Main plugin class. Must inherit `BasePlugin<PluginConfiguration>` and implement `IHasWebPages` for config pages.
-- `Jellyfin.Plugin.Template/Configuration/PluginConfiguration.cs` — Settings class. Inherits `BasePluginConfiguration`. Fields serialize to/from the dashboard config page.
-- `Jellyfin.Plugin.Template/Configuration/configPage.html` — Embedded resource (dashboard config UI). Uses jQuery-free vanilla JS with `emby-*` web components.
-- `Jellyfin.Plugin.Template/Jellyfin.Plugin.Template.csproj` — Targets `net9.0`. Key NuGet refs are `Jellyfin.Controller` and `Jellyfin.Model` with `<ExcludeAssets>runtime</ExcludeAssets>` (required — don't skip this, or the plugin won't register).
+- `Plugin.cs` — Main plugin class. Inherits `BasePlugin<PluginConfiguration>`, implements `IHasWebPages`. GUID: `3bd33ef7-dd55-485b-9487-8bce0b52bd55`.
+- `Configuration/PluginConfiguration.cs` — Settings: naming convention (suffix/folder), Noir/Color suffixes, series name pattern, auto-detect toggle, player overlay toggle.
+- `Configuration/configPage.html` — Dashboard config UI. Embedded resource using vanilla JS + `emby-*` web components. No jQuery.
+- `Api/SpiderNoirController.cs` — REST API endpoints: `GET/POST /SpiderNoir/versions/{id}`, `POST /SpiderNoir/switch/{id}/{version}`, `GET /SpiderNoir/series`. All endpoints require auth.
+- `Services/VersionDetectionService.cs` — Scans library for SpiderNoir episodes, detects Noir/Color sibling files using suffix or folder naming conventions.
+- `Services/EpisodeVersionPair.cs` — Data model for detected version pairs.
+- `Services/PluginServiceRegistrator.cs` — Registers `VersionDetectionService` as a DI singleton via `IPluginServiceRegistrator`.
+- `Web/playerOverlay.js` — Client-side JS that adds a Noir/Color switcher overlay to the video player. Injects into Jellyfin web player DOM.
+- `build.yaml` — Plugin metadata for CI/manifest generation.
 
-## Creating a new plugin from this template
+## How the version detection works
 
-1. Rename the solution, project, namespace, and `build.yaml` name/guid/artifacts.
-2. Generate a **new GUID** for the plugin (both in `build.yaml` and `Plugin.cs`):
-   ```bash
-   uuidgen
-   ```
-3. Update `build.yaml`:
-   - `name`, `guid`, `version`, `targetAbi`, `framework`, `category`, `owner`, `artifacts`
-   - `targetAbi` must match the Jellyfin server version (e.g., `10.9.0.0`).
-4. Update package versions in `.csproj` to match the target Jellyfin server version.
-5. The `Version`/`AssemblyVersion`/`FileVersion` defaults to `0.0.0.0` via `Directory.Build.props` — override as needed.
+**Suffix-based naming** (default):
+- `SpiderNoir S01E01.mkv` — Color version (untagged = Color)
+- `SpiderNoir S01E01 - Noir.mkv` — Noir version
+- `SpiderNoir S01E01 - Color.mkv` — Explicit Color tag
 
-## Plugin repository / manifest
+**Folder-based naming**:
+```
+SpiderNoir/Season 01/Color/S01E01.mkv
+SpiderNoir/Season 01/Noir/S01E01.mkv
+```
 
-- `build.yaml` is the metadata source. The CI pipeline (`publish.yaml`) delegates to `jellyfin/jellyfin-meta-plugins` which reads this file and generates a JSON manifest + publishes binaries.
-- The JSON manifest format for plugin repositories (per jellyfin.org blog post) uses fields: `category`, `guid`, `name`, `description`, `owner`, `overview`, `versions[]` with `checksum`, `changelog`, `targetAbi`, `sourceUrl`, `timestamp`, `version`.
-- The official manifest is hosted at `repo.jellyfin.org` via nginx; plugin binaries go on GitHub Releases.
+The `playerOverlay.js` script auto-injects into the web player page, polls for SpiderNoir content, fetches versions from the API, and renders a toggle overlay.
 
-## Key conventions
+## Creating a release / manifest
 
-- **Style**: Jellyfin uses StyleCop + Microsoft.NetAnalyzers. Ruleset at `jellyfin.ruleset` — many SA rules disabled (SA1009, SA1101, SA1200, SA1309, SA1600 etc.). Select CA rules are errors (CA1305, CA1725, CA2016, CA2254).
-- **Nullable**: enabled, `TreatWarningsAsErrors: true`, `AnalysisMode: AllEnabledByDefault`.
-- **EditorConfig**: 4-space indent, `utf-8`, LF line endings. Instance fields prefixed with `_`, static fields prefixed with `_` too (not `s_` despite the comment). PascalCase for most members.
-- **CI**: All workflows delegate to `jellyfin/jellyfin-meta-plugins` — build, test, publish, CodeQL, changelog, label sync. Renovate configured via `jellyfin/.github` preset.
+1. Update `build.yaml` version.
+2. Tag the release in git; the CI workflow (`publish.yaml`) handles JSON manifest generation and binary publishing via `jellyfin/jellyfin-meta-plugins`.
+3. The JSON manifest format uses fields: `category`, `guid`, `name`, `description`, `owner`, `overview`, `versions[]` with `checksum`, `changelog`, `targetAbi`, `sourceUrl`, `timestamp`, `version`.
 
 ## VS Code debugging
 
-Pre-configured tasks in `.vscode/`:
-- Expects `jellyfin` and `jellyfin-web` repos cloned as siblings.
-- Edit `.vscode/settings.json` paths for your local setup:
-  - `jellyfinDir` — path to `jellyfin/Jellyfin.Server`
-  - `jellyfinWebDir` — path to `jellyfin-web`
-  - `jellyfinLinuxDataDir` / `jellyfinWindowsDataDir` — server data dir
-- `build-and-copy` task: publishes the plugin then `cp`-s the DLL to the server's plugin directory.
+Pre-configured in `.vscode/`:
+- Edit `.vscode/settings.json` to point `jellyfinDir`, `jellyfinWebDir`, `jellyfinLinuxDataDir` / `jellyfinWindowsDataDir` to your local Jellyfin server paths.
+- `build-and-copy` task: publishes the plugin then copies the DLL to the server's plugin directory.
 - Launch config runs `jellyfin.dll` with `--webdir` pointing at `jellyfin-web/dist/`.
+
+## Key conventions
+
+- **Style**: StyleCop + Microsoft.NetAnalyzers. Ruleset at `jellyfin.ruleset`. Many SA rules disabled (SA1009, SA1101, SA1200, SA1309, SA1600). Select CA rules are errors (CA1305, CA1725, CA2016, CA2254).
+- **Nullable**: enabled. `TreatWarningsAsErrors: true`. `AnalysisMode: AllEnabledByDefault`.
+- **EditorConfig**: 4-space indent, utf-8, LF endings. Instance fields prefixed with `_`. PascalCase for public members.
+- **CI**: All workflows delegate to `jellyfin/jellyfin-meta-plugins`.
+- **Renovate**: Configured via `jellyfin/.github` preset.
 
 ## Licensing
 
-The binary plugin **must** be GPLv3 (due to linking against GPLv3 NuGet packages). The template provides a GPLv3 LICENSE. Proprietary/source-unavailable plugins are not permitted for distribution.
+Binary plugin **must** be GPLv3 due to linking against GPLv3 Jellyfin NuGet packages. Proprietary/source-unavailable plugins not permitted for distribution.

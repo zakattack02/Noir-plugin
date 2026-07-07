@@ -11,9 +11,10 @@
                 "version": "0.1.0.0",
                 "changelog": "Development preview",
                 "targetAbi": "10.9.0.0",
-                "sourceUrl": "https://github.com/zakattack02/Noir-plugin/releases/download/v0.1.0.0/Jellyfin.Plugin.SpiderNoir.dll",
-                "checksum": "4c2b9e57730df1ac75e4253fe32dd584",
-                "timestamp": "2026-07-07 00:00:00"
+                "sourceUrl": "https://github.com/zakattack02/Noir-plugin/releases/download/0.1.0.0/Jellyfin.Plugin.SpiderNoir-0.1.0.0.zip",
+                "checksum": "A313DAB124F7A19A29036C88DD271F43",
+                "timestamp": "2026-07-07T15:17:00",
+                "dependencies": []
             }
         ]
     }

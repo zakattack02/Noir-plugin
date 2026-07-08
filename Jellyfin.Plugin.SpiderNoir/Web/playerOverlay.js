@@ -21,6 +21,16 @@
     var MENU_ID = 'spiderNoirMenu';
     var observer = null;
     var currentItemId = null;
+    var _observerScheduled = false;
+    var _pollAttempts = 0;
+    var MAX_POLL_ATTEMPTS = 5;
+    var POLL_INTERVAL_MS = 1000;
+
+    /* ── Debug logging ───────────────────────────────────────────── */
+
+    function log(msg) {
+        console.log('[SpiderNoir] ' + msg);
+    }
 
     /* ── Styles ─────────────────────────────────────────────────── */
 
@@ -99,6 +109,7 @@
             '}'
         ].join('\n');
         document.head.appendChild(style);
+        log('Styles injected');
     }
 
     /* ── Item ID detection ─────────────────────────────────────── */
@@ -145,6 +156,9 @@
         icon.className = 'sn-icon';
         btn.appendChild(icon);
 
+        // Button starts visible; hidden only after API confirms no versions exist
+        btn.style.display = '';
+
         return btn;
     }
 
@@ -183,9 +197,14 @@
 
     /* ── Insert into OSD controls bar ──────────────────────────── */
 
-    function insertIntoOsd() {
+    function tryInsert() {
         var buttonsBar = document.querySelector('.buttons.focuscontainer-x');
-        if (!buttonsBar) return;
+        var osd = document.querySelector('.videoOsdBottom');
+        var playerPage = document.querySelector('#videoOsdPage');
+
+        log('tryInsert: buttonsBar=' + !!buttonsBar + ' osd=' + !!osd + ' playerPage=' + !!playerPage);
+
+        if (!buttonsBar || !osd || !playerPage) return false;
 
         // Remove old floating overlay if it exists (migration from v1)
         var oldOverlay = document.getElementById('spiderNoirOverlay');
@@ -194,13 +213,13 @@
         // Check if already present in this buttons bar
         var existing = buttonsBar.querySelector('.' + BTN_CLASS);
         if (existing) {
-            // Already there — just update item ID and versions
+            log('Button already present — updating item ID / versions');
             var newId = getCurrentItemId();
             if (newId && newId !== currentItemId) {
                 currentItemId = newId;
                 checkVersions();
             }
-            return;
+            return true;
         }
 
         // Insert our button before the user rating (favorite) button
@@ -217,37 +236,47 @@
 
         if (favoriteBtn) {
             buttonsBar.insertBefore(wrapper, favoriteBtn);
+            log('Inserted wrapper before .btnUserRating');
         } else {
-            // Fallback: before fullscreen
+            // Fallback: before fullscreen button
             var fullscreenBtn = buttonsBar.querySelector('.btnFullscreen');
             if (fullscreenBtn) {
                 buttonsBar.insertBefore(wrapper, fullscreenBtn);
+                log('Inserted wrapper before .btnFullscreen');
             } else {
                 buttonsBar.appendChild(wrapper);
+                log('Appended wrapper to end of buttons bar');
             }
         }
 
         currentItemId = getCurrentItemId();
+        log('currentItemId = ' + currentItemId);
         checkVersions();
+        return true;
     }
 
     /* ── Check versions via API ────────────────────────────────── */
 
     function checkVersions() {
         var itemId = getCurrentItemId();
-        if (!itemId || !window.ApiClient) return;
+        if (!itemId) { log('checkVersions: no itemId found'); return; }
+        if (!window.ApiClient) { log('checkVersions: ApiClient not available'); return; }
         currentItemId = itemId;
+        log('checkVersions: itemId=' + itemId + ', calling API');
 
         var apiClient = window.ApiClient;
         apiClient.getJSON(apiClient.getUrl('SpiderNoir/versions/' + itemId)).then(function (result) {
+            log('checkVersions: API response = ' + JSON.stringify(result));
             var btn = document.querySelector('.' + BTN_CLASS);
-            if (!btn) return;
+            if (!btn) { log('checkVersions: button not found in DOM after API call'); return; }
 
             if (!result.hasVersions) {
+                log('checkVersions: hasVersions=false, hiding button');
                 btn.style.display = 'none';
                 return;
             }
 
+            log('checkVersions: hasVersions=true, showing button');
             btn.style.display = '';
             var isNoir = result.currentVersion === 'noir';
             btn.classList.toggle('active', isNoir);
@@ -260,7 +289,8 @@
                     check.classList.toggle('hidden', version !== result.currentVersion);
                 });
             }
-        }).catch(function () {
+        }).catch(function (err) {
+            log('checkVersions: API error = ' + (err.message || err));
             var btn = document.querySelector('.' + BTN_CLASS);
             if (btn) btn.style.display = 'none';
         });
@@ -303,35 +333,27 @@
 
     /* ── MutationObserver setup ────────────────────────────────── */
 
-    var _debounceTimer = null;
+    function scheduleObserverCheck() {
+        // FIXED: Use a coalescing flag + short timeout instead of a resettable
+        // debounce. The old 200ms debounce starved because Jellyfin's DOM
+        // constantly mutates during playback (class toggles, progress updates,
+        // etc.), resetting the timer indefinitely.
+        //
+        // With this approach, if a check is already scheduled we skip;
+        // the timer always fires at most 50ms after the first mutation.
+        if (_observerScheduled) return;
+        _observerScheduled = true;
+        setTimeout(function () {
+            _observerScheduled = false;
+            tryInsert();
+        }, 50);
+    }
 
     function setupObserver() {
         if (observer) observer.disconnect();
 
         observer = new MutationObserver(function () {
-            if (_debounceTimer) clearTimeout(_debounceTimer);
-            _debounceTimer = setTimeout(function () {
-                var osd = document.querySelector('.videoOsdBottom');
-                var buttonsBar = document.querySelector('.buttons.focuscontainer-x');
-                var playerPage = document.querySelector('#videoOsdPage');
-
-                if (osd && buttonsBar && playerPage) {
-                    // Check if our wrapper still exists; if not, re-insert
-                    var wrapper = buttonsBar.querySelector('.snWrapper');
-                    if (!wrapper || !buttonsBar.contains(wrapper)) {
-                        insertIntoOsd();
-                    }
-
-                    // Re-check when OSD becomes visible
-                    if (!osd.classList.contains('hide')) {
-                        var newId = getCurrentItemId();
-                        if (newId && newId !== currentItemId) {
-                            currentItemId = newId;
-                            checkVersions();
-                        }
-                    }
-                }
-            }, 200);
+            scheduleObserverCheck();
         });
 
         observer.observe(document.body, {
@@ -340,6 +362,24 @@
             attributes: true,
             attributeFilter: ['class', 'data-itemid']
         });
+
+        log('MutationObserver started');
+    }
+
+    /* ── Polling fallback ──────────────────────────────────────── */
+
+    function pollForOsd() {
+        if (_pollAttempts >= MAX_POLL_ATTEMPTS) {
+            log('Poll exhausted after ' + MAX_POLL_ATTEMPTS + ' attempts');
+            return;
+        }
+        _pollAttempts++;
+        log('Poll attempt ' + _pollAttempts + '/' + MAX_POLL_ATTEMPTS);
+        if (tryInsert()) {
+            log('Poll succeeded — button inserted');
+            return;
+        }
+        setTimeout(pollForOsd, POLL_INTERVAL_MS);
     }
 
     /* ── Playback event listeners ──────────────────────────────── */
@@ -347,9 +387,11 @@
     function setupPlaybackEvents() {
         if (window.Events && window.ApiClient) {
             window.Events.on(window.ApiClient, 'playbackstart', function () {
+                log('playbackstart event received');
                 setTimeout(checkVersions, 500);
             });
             window.Events.on(window.ApiClient, 'playbackstop', function () {
+                log('playbackstop event received');
                 var btn = document.querySelector('.' + BTN_CLASS);
                 if (btn) btn.style.display = 'none';
             });
@@ -359,9 +401,17 @@
     /* ── Init ──────────────────────────────────────────────────── */
 
     function init() {
+        log('Init started');
         injectStyles();
         setupObserver();
         setupPlaybackEvents();
+
+        // Immediate check — OSD might already be in the DOM
+        log('Running initial OSD check');
+        tryInsert();
+
+        // Polling fallback — catches cases where OSD elements load after init
+        setTimeout(pollForOsd, POLL_INTERVAL_MS);
 
         // Close menu on any click outside a wrapper
         document.addEventListener('click', function (e) {
@@ -381,6 +431,8 @@
                 }
             }
         });
+
+        log('Init complete');
     }
 
     if (document.readyState === 'loading') {

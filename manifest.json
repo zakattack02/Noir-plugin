@@ -8,6 +8,15 @@
         "overview": "SpiderNoir plugin detects episodes that have both Noir (B&W) and Color versions available and enables seamless switching between them during playback via an overlay in the Jellyfin video player.",
         "versions": [
             {
+                "version": "0.3.1.0",
+                "changelog": "Fix DVD icon color: white fill for visibility on dark OSD background",
+                "targetAbi": "10.9.0.0",
+                "sourceUrl": "https://github.com/zakattack02/Noir-plugin/releases/download/0.3.1.0/Jellyfin.Plugin.SpiderNoir-0.3.1.0.zip",
+                "checksum": "9986C30766E0C0EF9B6241E6FB81E2C5",
+                "timestamp": "2026-07-08T02:54:20",
+                "dependencies": []
+            },
+            {
                 "version": "0.3.0.0",
                 "changelog": "OSD integration: player overlay refactored into player controls bar with MutationObserver-based detection",
                 "targetAbi": "10.9.0.0",

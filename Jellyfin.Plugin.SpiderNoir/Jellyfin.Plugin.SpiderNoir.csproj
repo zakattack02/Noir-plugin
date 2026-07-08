@@ -30,6 +30,8 @@
     <EmbeddedResource Include="Configuration\configPage.html" />
     <None Remove="Web\playerOverlay.js" />
     <EmbeddedResource Include="Web\playerOverlay.js" />
+    <None Remove="Web\dvd-disk.svg" />
+    <EmbeddedResource Include="..\dvd-disk.svg" Link="Web\dvd-disk.svg" />
   </ItemGroup>
 
 </Project>

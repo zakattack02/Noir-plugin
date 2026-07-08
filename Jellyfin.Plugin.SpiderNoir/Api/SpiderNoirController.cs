@@ -167,6 +167,30 @@ public class SpiderNoirController : ControllerBase
     }
 
     /// <summary>
+    /// Serves the plugin icon SVG.
+    /// </summary>
+    /// <returns>The dvd-disk.svg icon.</returns>
+    [AllowAnonymous]
+    [HttpGet("icon.svg")]
+    [Produces("image/svg+xml")]
+    public ActionResult GetIcon()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = "Jellyfin.Plugin.SpiderNoir.Web.dvd-disk.svg";
+
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream == null)
+        {
+            _logger.LogWarning("Embedded resource '{Resource}' not found", resourceName);
+            return NotFound();
+        }
+
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        var content = reader.ReadToEnd();
+        return Content(content, "image/svg+xml");
+    }
+
+    /// <summary>
     /// Lists all detected SpiderNoir series that have dual-version episodes.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>

@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.SpiderNoir.Configuration;
 using MediaBrowser.Common.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -21,12 +20,10 @@ namespace Jellyfin.Plugin.SpiderNoir.Services;
 /// </remarks>
 public class ScriptInjectorMiddleware
 {
-    private const string PluginConfigKey = "SpiderNoir";
     private const string ScriptSnippet = "<script src=\"/SpiderNoir/player-overlay.js\"></script>\n";
 
     private readonly RequestDelegate _next;
     private readonly ILogger<ScriptInjectorMiddleware> _logger;
-    private readonly IConfigurationManager _configurationManager;
     private readonly string _webPath;
 
     /// <summary>
@@ -34,16 +31,15 @@ public class ScriptInjectorMiddleware
     /// </summary>
     /// <param name="next">The next middleware in the pipeline.</param>
     /// <param name="logger">The logger.</param>
-    /// <param name="configurationManager">The configuration manager.</param>
+    /// <param name="applicationPaths">The application paths.</param>
     public ScriptInjectorMiddleware(
         RequestDelegate next,
         ILogger<ScriptInjectorMiddleware> logger,
-        IConfigurationManager configurationManager)
+        IApplicationPaths applicationPaths)
     {
         _next = next;
         _logger = logger;
-        _configurationManager = configurationManager;
-        _webPath = configurationManager.CommonApplicationPaths?.WebPath ?? string.Empty;
+        _webPath = applicationPaths.WebPath ?? string.Empty;
     }
 
     /// <summary>
@@ -67,19 +63,12 @@ public class ScriptInjectorMiddleware
             return;
         }
 
-        // Check if overlay is enabled in configuration
-        try
+        // Check if overlay is enabled in plugin configuration
+        // Uses Plugin.Instance (populated during plugin creation) rather than
+        // IConfigurationManager.GetConfiguration() because BasePlugin<T> loads
+        // config directly from disk, not via the configuration manager.
+        if (Plugin.Instance is null || !Plugin.Instance.Configuration.EnablePlayerOverlay)
         {
-            var config = _configurationManager.GetConfiguration<PluginConfiguration>(PluginConfigKey);
-            if (!config.EnablePlayerOverlay)
-            {
-                await _next(context).ConfigureAwait(false);
-                return;
-            }
-        }
-        catch
-        {
-            // If we can't read config, fall through to normal serving
             await _next(context).ConfigureAwait(false);
             return;
         }

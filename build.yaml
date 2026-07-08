@@ -1,7 +1,7 @@
 ---
 name: "SpiderNoir"
 guid: "3bd33ef7-dd55-485b-9487-8bce0b52bd55"
-version: "0.1.0.0"
+version: "0.2.0.0"
 targetAbi: "10.9.0.0"
 framework: "net9.0"
 overview: "Switch between Black & White and Color versions of SpiderNoir series content from the video player."
@@ -14,4 +14,4 @@ owner: "zakattack02"
 artifacts:
   - "Jellyfin.Plugin.SpiderNoir.dll"
 changelog: >
-  Development preview
+  Documentation overhaul: README, wiki, API docs, and installation guide

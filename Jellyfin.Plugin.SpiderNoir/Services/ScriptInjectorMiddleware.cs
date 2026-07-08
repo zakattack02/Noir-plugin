@@ -11,18 +11,23 @@ namespace Jellyfin.Plugin.SpiderNoir.Services;
 
 /// <summary>
 /// ASP.NET Core middleware that injects the SpiderNoir player overlay script
-/// into HTML responses served by Jellyfin.
+/// into the Jellyfin web client's index.html.
 /// </summary>
 /// <remarks>
 /// This replaces the old Custom JavaScript field (removed in Jellyfin 10.9+)
 /// by injecting our script tag directly into the served index.html.
+/// It reads the file from disk, modifies it, and serves it — bypassing
+/// response compression so the HTML is always readable.
 /// </remarks>
 public class ScriptInjectorMiddleware
 {
     private const string PluginConfigKey = "SpiderNoir";
+    private const string ScriptSnippet = "<script src=\"/SpiderNoir/player-overlay.js\"></script>\n";
+
     private readonly RequestDelegate _next;
     private readonly ILogger<ScriptInjectorMiddleware> _logger;
     private readonly IConfigurationManager _configurationManager;
+    private readonly string _webPath;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ScriptInjectorMiddleware"/> class.
@@ -38,6 +43,7 @@ public class ScriptInjectorMiddleware
         _next = next;
         _logger = logger;
         _configurationManager = configurationManager;
+        _webPath = configurationManager.CommonApplicationPaths?.WebPath ?? string.Empty;
     }
 
     /// <summary>
@@ -47,65 +53,104 @@ public class ScriptInjectorMiddleware
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
-        // Only intercept HTML responses served to browser
-        var path = context.Request.Path.Value;
-        if (!string.IsNullOrEmpty(path)
-            && !path.Equals("/", StringComparison.OrdinalIgnoreCase)
-            && !path.Contains("index.html", StringComparison.OrdinalIgnoreCase)
-            && !path.StartsWith("/web/", StringComparison.OrdinalIgnoreCase))
+        // Only intercept GET requests for the web client's index.html
+        if (!IsIndexHtmlRequest(context))
         {
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(_webPath) || !Directory.Exists(_webPath))
+        {
+            _logger.LogWarning("Web path not found: {WebPath}", _webPath);
             await _next(context).ConfigureAwait(false);
             return;
         }
 
         // Check if overlay is enabled in configuration
-        var config = _configurationManager.GetConfiguration<PluginConfiguration>(PluginConfigKey);
-        if (!config.EnablePlayerOverlay)
+        try
         {
+            var config = _configurationManager.GetConfiguration<PluginConfiguration>(PluginConfigKey);
+            if (!config.EnablePlayerOverlay)
+            {
+                await _next(context).ConfigureAwait(false);
+                return;
+            }
+        }
+        catch
+        {
+            // If we can't read config, fall through to normal serving
             await _next(context).ConfigureAwait(false);
             return;
         }
 
-        // Buffer the response to inject our script
-        var originalBody = context.Response.Body;
-        using var memoryStream = new MemoryStream();
-
-        context.Response.Body = memoryStream;
-
         try
         {
-            await _next(context).ConfigureAwait(false);
-
-            // Only inject into HTML responses
-            var contentType = context.Response.ContentType ?? string.Empty;
-            if (!contentType.Contains("text/html", StringComparison.OrdinalIgnoreCase))
+            var indexPath = Path.Combine(_webPath, "index.html");
+            if (!File.Exists(indexPath))
             {
-                memoryStream.Seek(0, SeekOrigin.Begin);
-                await memoryStream.CopyToAsync(originalBody).ConfigureAwait(false);
+                _logger.LogWarning("index.html not found at {Path}", indexPath);
+                await _next(context).ConfigureAwait(false);
                 return;
             }
 
-            memoryStream.Seek(0, SeekOrigin.Begin);
-            var responseBody = await new StreamReader(memoryStream).ReadToEndAsync().ConfigureAwait(false);
+            // Read the file and inject the script tag if needed
+            var originalHtml = await File.ReadAllTextAsync(indexPath).ConfigureAwait(false);
 
-            // Inject script tag before </head>
-            if (responseBody.Contains("</head>", StringComparison.OrdinalIgnoreCase))
+            if (!originalHtml.Contains("</head>", StringComparison.OrdinalIgnoreCase))
             {
-                responseBody = responseBody.Replace(
-                    "</head>",
-                    "<script src=\"/SpiderNoir/player-overlay.js\"></script>\n</head>",
-                    StringComparison.OrdinalIgnoreCase);
-
-                _logger.LogDebug("Injected SpiderNoir player overlay script into HTML response");
+                _logger.LogWarning("index.html does not contain </head> tag");
+                await _next(context).ConfigureAwait(false);
+                return;
             }
 
-            var bytes = Encoding.UTF8.GetBytes(responseBody);
+            // Only inject if not already injected
+            string modifiedHtml;
+            if (originalHtml.Contains("/SpiderNoir/player-overlay.js", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug("Script already present in index.html");
+                modifiedHtml = originalHtml;
+            }
+            else
+            {
+                modifiedHtml = originalHtml.Replace(
+                    "</head>",
+                    ScriptSnippet + "</head>",
+                    StringComparison.OrdinalIgnoreCase);
+
+                _logger.LogInformation("Injected SpiderNoir overlay script into index.html");
+            }
+
+            var bytes = Encoding.UTF8.GetBytes(modifiedHtml);
+            context.Response.ContentType = "text/html; charset=utf-8";
             context.Response.ContentLength = bytes.Length;
-            await originalBody.WriteAsync(bytes.AsMemory(), context.RequestAborted).ConfigureAwait(false);
+            await context.Response.Body.WriteAsync(bytes.AsMemory(), context.RequestAborted).ConfigureAwait(false);
         }
-        finally
+        catch (Exception ex)
         {
-            context.Response.Body = originalBody;
+            _logger.LogError(ex, "Failed to inject SpiderNoir script into index.html");
+            await _next(context).ConfigureAwait(false);
         }
+    }
+
+    private static bool IsIndexHtmlRequest(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            return false;
+        }
+
+        var path = context.Request.Path.Value;
+        if (string.IsNullOrEmpty(path))
+        {
+            return false;
+        }
+
+        // Match /, /web/, /web/index.html, /index.html
+        return path.Equals("/", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/web", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/web/", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith("/index.html", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/index.html", StringComparison.OrdinalIgnoreCase);
     }
 }

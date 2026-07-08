@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.SpiderNoir.Services;
@@ -136,6 +139,31 @@ public class SpiderNoirController : ControllerBase
             targetPath,
             itemId
         });
+    }
+
+    /// <summary>
+    /// Serves the player overlay JavaScript for injection into the web client.
+    /// Add this URL to Dashboard -> General -> Custom JavaScript to enable the overlay.
+    /// </summary>
+    /// <returns>The playerOverlay.js script.</returns>
+    [AllowAnonymous]
+    [HttpGet("player-overlay.js")]
+    [Produces("application/javascript")]
+    public ActionResult GetPlayerOverlayJs()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = "Jellyfin.Plugin.SpiderNoir.Web.playerOverlay.js";
+
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream == null)
+        {
+            _logger.LogWarning("Embedded resource '{Resource}' not found", resourceName);
+            return NotFound();
+        }
+
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        var content = reader.ReadToEnd();
+        return Content(content, "application/javascript");
     }
 
     /// <summary>

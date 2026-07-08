@@ -52,6 +52,23 @@
                         </button>
                     </div>
                 </form>
+
+                <div style="margin-top: 2em; padding: 1em; background: rgba(0,0,0,0.3); border-radius: 6px;">
+                    <h3 style="margin-top: 0;">Player Overlay Setup</h3>
+                    <p>To see the Noir/Color switcher in the video player, add this URL to
+                    <strong>Dashboard → General → Custom JavaScript</strong>:</p>
+                    <div style="display:flex; gap:8px; align-items:center; margin:1em 0;">
+                        <input id="overlayScriptUrl" type="text" readonly is="emby-input"
+                            value="/SpiderNoir/player-overlay.js" style="flex:1;" />
+                        <button is="emby-button" class="raised" onclick="navigator.clipboard.writeText('/SpiderNoir/player-overlay.js')">
+                            <span>Copy</span>
+                        </button>
+                    </div>
+                    <p style="color: rgba(255,255,255,0.6); font-size: 0.9em;">
+                        The overlay detects SpiderNoir content automatically and adds
+                        Noir/Color toggle buttons to the bottom-right of the video player.
+                    </p>
+                </div>
             </div>
         </div>
         <script type="text/javascript">

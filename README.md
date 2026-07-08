@@ -2,7 +2,7 @@
 
 Switch between Black & White (Noir) and Color versions of SpiderNoir series episodes directly from the Jellyfin video player.
 
-**Version:** 0.3.5.0 | **Target:** Jellyfin 10.9+ (ABI 10.9.0.0) | **Framework:** .NET 9.0 | **License:** GPLv3
+**Version:** 0.3.6.0 | **Target:** Jellyfin 10.9+ (ABI 10.9.0.0) | **Framework:** .NET 9.0 | **License:** GPLv3
 
 ## Features
 
@@ -175,7 +175,7 @@ Other root-level files:
 ```
 ├── .vscode/                          VS Code launch + task configs for debugging
 ├── wiki/                             Documentation pages
-├── Directory.Build.props             Shared version info (0.3.5.0)
+├── Directory.Build.props             Shared version info (0.3.6.0)
 ├── jellyfin.ruleset                  StyleCop + NetAnalyzers ruleset
 ├── dvd-disk.svg                      Plugin icon SVG
 ```

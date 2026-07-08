@@ -21,7 +21,6 @@
     var MENU_ID = 'spiderNoirMenu';
     var observer = null;
     var currentItemId = null;
-    var inserted = false;
 
     /* ── Styles ─────────────────────────────────────────────────── */
 
@@ -137,21 +136,14 @@
     /* ── Button creation ───────────────────────────────────────── */
 
     function createButton() {
-        var btn = document.createElement('button');
-        btn.is = 'paper-icon-button-light';
+        var btn = document.createElement('button', { is: 'paper-icon-button-light' });
         btn.className = BTN_CLASS + ' autoSize paper-icon-button-light';
+        btn.setAttribute('is', 'paper-icon-button-light');
         btn.title = 'Switch version';
 
         var icon = document.createElement('div');
         icon.className = 'sn-icon';
         btn.appendChild(icon);
-
-        // Click to toggle dropdown
-        btn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            var menu = document.getElementById(MENU_ID);
-            if (menu) menu.classList.toggle('open');
-        });
 
         return btn;
     }
@@ -192,7 +184,6 @@
     /* ── Insert into OSD controls bar ──────────────────────────── */
 
     function insertIntoOsd() {
-        if (inserted) return;
         var buttonsBar = document.querySelector('.buttons.focuscontainer-x');
         if (!buttonsBar) return;
 
@@ -200,40 +191,44 @@
         var oldOverlay = document.getElementById('spiderNoirOverlay');
         if (oldOverlay) oldOverlay.parentNode.removeChild(oldOverlay);
 
-        // Don't add if we already have our button
-        if (buttonsBar.querySelector('.' + BTN_CLASS)) {
-            inserted = true;
+        // Check if already present in this buttons bar
+        var existing = buttonsBar.querySelector('.' + BTN_CLASS);
+        if (existing) {
+            // Already there — just update item ID and versions
+            var newId = getCurrentItemId();
+            if (newId && newId !== currentItemId) {
+                currentItemId = newId;
+                checkVersions();
+            }
             return;
         }
 
-        // Insert our button before the fullscreen button (last in the bar)
-        var fullscreenBtn = buttonsBar.querySelector('.btnFullscreen');
+        // Insert our button before the user rating (favorite) button
+        var favoriteBtn = buttonsBar.querySelector('.btnUserRating');
         var btn = createButton();
         var menu = createMenu();
 
         // Wrap both in a container for positioning
         var wrapper = document.createElement('div');
         wrapper.style.cssText = 'position:relative;display:inline-flex;';
+        wrapper.className = 'snWrapper';
         wrapper.appendChild(menu);
         wrapper.appendChild(btn);
 
-        if (fullscreenBtn) {
-            buttonsBar.insertBefore(wrapper, fullscreenBtn);
+        if (favoriteBtn) {
+            buttonsBar.insertBefore(wrapper, favoriteBtn);
         } else {
-            buttonsBar.appendChild(wrapper);
+            // Fallback: before fullscreen
+            var fullscreenBtn = buttonsBar.querySelector('.btnFullscreen');
+            if (fullscreenBtn) {
+                buttonsBar.insertBefore(wrapper, fullscreenBtn);
+            } else {
+                buttonsBar.appendChild(wrapper);
+            }
         }
 
-        inserted = true;
         currentItemId = getCurrentItemId();
         checkVersions();
-
-        // Close menu on any outside click
-        document.addEventListener('click', function (e) {
-            var menu = document.getElementById(MENU_ID);
-            if (menu && !wrapper.contains(e.target)) {
-                menu.classList.remove('open');
-            }
-        });
     }
 
     /* ── Check versions via API ────────────────────────────────── */
@@ -308,26 +303,35 @@
 
     /* ── MutationObserver setup ────────────────────────────────── */
 
+    var _debounceTimer = null;
+
     function setupObserver() {
         if (observer) observer.disconnect();
 
         observer = new MutationObserver(function () {
-            var osd = document.querySelector('.videoOsdBottom');
-            var buttonsBar = document.querySelector('.buttons.focuscontainer-x');
-            var playerPage = document.querySelector('#videoOsdPage');
+            if (_debounceTimer) clearTimeout(_debounceTimer);
+            _debounceTimer = setTimeout(function () {
+                var osd = document.querySelector('.videoOsdBottom');
+                var buttonsBar = document.querySelector('.buttons.focuscontainer-x');
+                var playerPage = document.querySelector('#videoOsdPage');
 
-            if (osd && buttonsBar && playerPage) {
-                insertIntoOsd();
+                if (osd && buttonsBar && playerPage) {
+                    // Check if our wrapper still exists; if not, re-insert
+                    var wrapper = buttonsBar.querySelector('.snWrapper');
+                    if (!wrapper || !buttonsBar.contains(wrapper)) {
+                        insertIntoOsd();
+                    }
 
-                // Re-check when OSD visibility changes
-                if (!osd.classList.contains('hide')) {
-                    var newId = getCurrentItemId();
-                    if (newId && newId !== currentItemId) {
-                        currentItemId = newId;
-                        checkVersions();
+                    // Re-check when OSD becomes visible
+                    if (!osd.classList.contains('hide')) {
+                        var newId = getCurrentItemId();
+                        if (newId && newId !== currentItemId) {
+                            currentItemId = newId;
+                            checkVersions();
+                        }
                     }
                 }
-            }
+            }, 200);
         });
 
         observer.observe(document.body, {
@@ -358,6 +362,14 @@
         injectStyles();
         setupObserver();
         setupPlaybackEvents();
+
+        // Close menu on any click outside a wrapper
+        document.addEventListener('click', function (e) {
+            var menu = document.getElementById(MENU_ID);
+            if (menu && !e.target.closest('.snWrapper')) {
+                menu.classList.remove('open');
+            }
+        });
 
         // Also check on visibility change (tab switch)
         document.addEventListener('visibilitychange', function () {

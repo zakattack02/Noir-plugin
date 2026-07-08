@@ -8,12 +8,12 @@
         "overview": "SpiderNoir plugin detects episodes that have both Noir (B&W) and Color versions available and enables seamless switching between them during playback via an overlay in the Jellyfin video player.",
         "versions": [
             {
-                "version": "0.3.3.0",
+                "version": "0.3.4.0",
                 "changelog": "Fix MutationObserver debounce starvation: replaced resettable debounce with coalescing flag, added polling fallback and console logging",
                 "targetAbi": "10.9.0.0",
-                "sourceUrl": "https://github.com/zakattack02/Noir-plugin/releases/download/0.3.3.0/Jellyfin.Plugin.SpiderNoir-0.3.3.0.zip",
-                "checksum": "99901671BBD9EBA759F8AB62A570803F",
-                "timestamp": "2026-07-08T03:00:00",
+                "sourceUrl": "https://github.com/zakattack02/Noir-plugin/releases/download/0.3.4.0/Jellyfin.Plugin.SpiderNoir-0.3.4.0.zip",
+                "checksum": "1D384A74FE3E578EEB2B8F2BDB5D89DA",
+                "timestamp": "2026-07-08T04:00:00",
                 "dependencies": []
             },
             {

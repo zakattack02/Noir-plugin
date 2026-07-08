@@ -1,8 +1,13 @@
 /**
  * SpiderNoir Player Overlay
  *
- * Adds a Noir / Color version switcher to the Jellyfin video player.
- * Shows a DVD icon button that opens a dropdown menu with version options.
+ * Integrates a Noir / Color version switcher button into the Jellyfin video
+ * player's OSD (On-Screen Display) controls bar. Shows a DVD icon button
+ * that opens a dropdown with version options.
+ *
+ * Uses MutationObserver to detect the player OSD lifecycle and inserts the
+ * button into the existing OSD controls bar (.buttons.focuscontainer-x)
+ * rather than using a floating fixed-position element.
  *
  * Dependencies: ApiClient (global Jellyfin web object), Dashboard (global)
  * No jQuery required.
@@ -11,8 +16,14 @@
     'use strict';
 
     var SPIDER_NOIR_PLUGIN_ID = '3bd33ef7-dd55-485b-9487-8bce0b52bd55';
-    var OVERLAY_ID = 'spiderNoirOverlay';
     var STYLE_ID = 'spiderNoirStyles';
+    var BTN_CLASS = 'btnSpiderNoir';
+    var MENU_ID = 'spiderNoirMenu';
+    var observer = null;
+    var currentItemId = null;
+    var inserted = false;
+
+    /* ── Styles ─────────────────────────────────────────────────── */
 
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) return;
@@ -20,51 +31,31 @@
         var style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = [
-            '#' + OVERLAY_ID + ' {',
-            '  position: fixed;',
-            '  bottom: 80px;',
-            '  right: 24px;',
-            '  z-index: 999999;',
-            '  display: none;',
-            '  flex-direction: column;',
-            '  align-items: flex-end;',
-            '  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;',
+            /* OSD button — matches Jellyfin's paper-icon-button-light style */
+            '.' + BTN_CLASS + ' {',
+            '  position: relative !important;',
+            '  display: inline-flex !important;',
+            '  align-items: center;',
+            '  justify-content: center;',
             '}',
-            '#' + OVERLAY_ID + '.visible { display: flex; }',
-
-            /* Toggle button */
-            '#' + OVERLAY_ID + ' .sn-toggle-btn {',
-            '  width: 40px; height: 40px;',
-            '  padding: 6px;',
-            '  border: 2px solid rgba(255,255,255,0.15);',
-            '  border-radius: 50%;',
-            '  background: rgba(0,0,0,0.65);',
-            '  cursor: pointer;',
-            '  display: flex; align-items: center; justify-content: center;',
-            '  transition: all 0.2s ease;',
-            '  backdrop-filter: blur(4px);',
-            '}',
-            '#' + OVERLAY_ID + ' .sn-toggle-btn:hover {',
-            '  border-color: rgba(255,255,255,0.4);',
-            '  background: rgba(0,0,0,0.8);',
-            '}',
-            '#' + OVERLAY_ID + ' .sn-toggle-btn svg {',
+            '.' + BTN_CLASS + ' .sn-icon {',
             '  width: 22px; height: 22px;',
-            '  fill: #ccc;',
-            '  transition: fill 0.2s ease;',
+            '  background-image: url(/SpiderNoir/icon.svg);',
+            '  background-size: contain;',
+            '  background-repeat: no-repeat;',
+            '  background-position: center;',
+            '  filter: brightness(0.8);',
+            '  transition: filter 0.2s ease;',
+            '  pointer-events: none;',
             '}',
-            '#' + OVERLAY_ID + ' .sn-toggle-btn:hover svg { fill: #fff; }',
-            '#' + OVERLAY_ID + ' .sn-toggle-btn.active {',
-            '  border-color: #00a4dc;',
-            '  background: rgba(0,164,220,0.2);',
-            '}',
-            '#' + OVERLAY_ID + ' .sn-toggle-btn.active svg { fill: #00a4dc; }',
+            '.' + BTN_CLASS + ':hover .sn-icon { filter: brightness(1); }',
+            '.' + BTN_CLASS + '.active .sn-icon { filter: brightness(1) drop-shadow(0 0 4px #00a4dc); }',
 
             /* Dropdown menu */
-            '#' + OVERLAY_ID + ' .sn-menu {',
+            '#' + MENU_ID + ' {',
             '  display: none;',
             '  position: absolute;',
-            '  bottom: 48px;',
+            '  bottom: 44px;',
             '  right: 0;',
             '  min-width: 140px;',
             '  background: rgba(20,20,25,0.95);',
@@ -74,10 +65,11 @@
             '  backdrop-filter: blur(8px);',
             '  box-shadow: 0 4px 20px rgba(0,0,0,0.5);',
             '  overflow: hidden;',
+            '  z-index: 999999;',
             '}',
-            '#' + OVERLAY_ID + ' .sn-menu.open { display: block; }',
+            '#' + MENU_ID + '.open { display: block; }',
 
-            '#' + OVERLAY_ID + ' .sn-menu-item {',
+            '#' + MENU_ID + ' .sn-menu-item {',
             '  padding: 10px 14px;',
             '  cursor: pointer;',
             '  color: #ccc;',
@@ -88,17 +80,17 @@
             '  white-space: nowrap;',
             '  border: none; background: none; width: 100%; text-align: left;',
             '}',
-            '#' + OVERLAY_ID + ' .sn-menu-item:hover { background: rgba(255,255,255,0.08); color: #fff; }',
-            '#' + OVERLAY_ID + ' .sn-menu-item .sn-check {',
+            '#' + MENU_ID + ' .sn-menu-item:hover { background: rgba(255,255,255,0.08); color: #fff; }',
+            '#' + MENU_ID + ' .sn-menu-item .sn-check {',
             '  width: 18px; text-align: center; font-size: 14px;',
             '  color: #00a4dc; flex-shrink: 0;',
             '}',
-            '#' + OVERLAY_ID + ' .sn-menu-item .sn-check.hidden { visibility: hidden; }',
-            '#' + OVERLAY_ID + ' .sn-menu-item .sn-label { flex: 1; }',
-            '#' + OVERLAY_ID + ' .sn-menu-divider {',
+            '#' + MENU_ID + ' .sn-menu-item .sn-check.hidden { visibility: hidden; }',
+            '#' + MENU_ID + ' .sn-menu-item .sn-label { flex: 1; }',
+            '#' + MENU_ID + ' .sn-menu-divider {',
             '  height: 1px; background: rgba(255,255,255,0.08); margin: 4px 0;',
             '}',
-            '#' + OVERLAY_ID + ' .sn-menu-header {',
+            '#' + MENU_ID + ' .sn-menu-header {',
             '  padding: 8px 14px 4px;',
             '  font-size: 10px;',
             '  text-transform: uppercase;',
@@ -110,15 +102,63 @@
         document.head.appendChild(style);
     }
 
-    function createOverlay() {
-        if (document.getElementById(OVERLAY_ID)) return document.getElementById(OVERLAY_ID);
+    /* ── Item ID detection ─────────────────────────────────────── */
 
-        var overlay = document.createElement('div');
-        overlay.id = OVERLAY_ID;
+    function getCurrentItemId() {
+        // 1. PlaybackManager (most reliable when player is active)
+        try {
+            if (window.PlaybackManager) {
+                var item = window.PlaybackManager.currentMediaItem
+                    || window.PlaybackManager.currentPlaylistItem;
+                if (item && item.Id) return item.Id;
+            }
+        } catch (_) { /* PlaybackManager may not be fully initialized */ }
 
-        /* Menu dropdown */
+        // 2. videoPlayerContainer dataset
+        var wrapper = document.querySelector('.videoPlayerContainer');
+        if (wrapper && wrapper.dataset.itemId) return wrapper.dataset.itemId;
+
+        // 3. OSD page dataset
+        var osdPage = document.querySelector('#videoOsdPage');
+        if (osdPage && osdPage.dataset.itemId) return osdPage.dataset.itemId;
+
+        // 4. URL search params
+        var params = new URLSearchParams(window.location.search);
+        var id = params.get('id');
+        if (id) return id;
+
+        // 5. Now playing bar
+        var nowPlaying = document.querySelector('.nowPlayingBar');
+        if (nowPlaying && nowPlaying.dataset.itemId) return nowPlaying.dataset.itemId;
+
+        return null;
+    }
+
+    /* ── Button creation ───────────────────────────────────────── */
+
+    function createButton() {
+        var btn = document.createElement('button');
+        btn.is = 'paper-icon-button-light';
+        btn.className = BTN_CLASS + ' autoSize paper-icon-button-light';
+        btn.title = 'Switch version';
+
+        var icon = document.createElement('div');
+        icon.className = 'sn-icon';
+        btn.appendChild(icon);
+
+        // Click to toggle dropdown
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var menu = document.getElementById(MENU_ID);
+            if (menu) menu.classList.toggle('open');
+        });
+
+        return btn;
+    }
+
+    function createMenu() {
         var menu = document.createElement('div');
-        menu.className = 'sn-menu';
+        menu.id = MENU_ID;
         menu.innerHTML =
             '<div class="sn-menu-header">Version</div>' +
             '<button class="sn-menu-item" data-version="noir">' +
@@ -130,103 +170,108 @@
                 '<span class="sn-label">Color</span>' +
             '</button>';
 
-        /* Toggle button */
-        var btn = document.createElement('button');
-        btn.className = 'sn-toggle-btn';
-        btn.title = 'Switch version';
-        btn.innerHTML = '';  // SVG loaded async
-        btn.appendChild(document.createTextNode(''));
-
-        // Fetch SVG icon from the API and inject it
-        btn.style.backgroundImage = 'url(/SpiderNoir/icon.svg)';
-        btn.style.backgroundSize = '22px 22px';
-        btn.style.backgroundRepeat = 'no-repeat';
-        btn.style.backgroundPosition = 'center';
-
-        // Toggle menu on click
-        btn.addEventListener('click', function (e) {
+        // Close menu on outside click
+        menu.addEventListener('click', function (e) {
             e.stopPropagation();
-            menu.classList.toggle('open');
         });
 
         // Menu item click handling
         menu.querySelectorAll('.sn-menu-item').forEach(function (item) {
             item.addEventListener('click', function () {
                 var version = this.dataset.version;
-                var itemId = overlay.dataset.currentItemId;
-                if (itemId) {
-                    switchVersion(itemId, version);
+                if (currentItemId) {
+                    switchVersion(currentItemId, version);
                 }
                 menu.classList.remove('open');
             });
         });
 
-        overlay.appendChild(menu);
-        overlay.appendChild(btn);
+        return menu;
+    }
 
-        document.body.appendChild(overlay);
+    /* ── Insert into OSD controls bar ──────────────────────────── */
 
-        // Close menu on outside click
+    function insertIntoOsd() {
+        if (inserted) return;
+        var buttonsBar = document.querySelector('.buttons.focuscontainer-x');
+        if (!buttonsBar) return;
+
+        // Remove old floating overlay if it exists (migration from v1)
+        var oldOverlay = document.getElementById('spiderNoirOverlay');
+        if (oldOverlay) oldOverlay.parentNode.removeChild(oldOverlay);
+
+        // Don't add if we already have our button
+        if (buttonsBar.querySelector('.' + BTN_CLASS)) {
+            inserted = true;
+            return;
+        }
+
+        // Insert our button before the fullscreen button (last in the bar)
+        var fullscreenBtn = buttonsBar.querySelector('.btnFullscreen');
+        var btn = createButton();
+        var menu = createMenu();
+
+        // Wrap both in a container for positioning
+        var wrapper = document.createElement('div');
+        wrapper.style.cssText = 'position:relative;display:inline-flex;';
+        wrapper.appendChild(menu);
+        wrapper.appendChild(btn);
+
+        if (fullscreenBtn) {
+            buttonsBar.insertBefore(wrapper, fullscreenBtn);
+        } else {
+            buttonsBar.appendChild(wrapper);
+        }
+
+        inserted = true;
+        currentItemId = getCurrentItemId();
+        checkVersions();
+
+        // Close menu on any outside click
         document.addEventListener('click', function (e) {
-            if (!overlay.contains(e.target)) {
+            var menu = document.getElementById(MENU_ID);
+            if (menu && !wrapper.contains(e.target)) {
                 menu.classList.remove('open');
             }
         });
-
-        return overlay;
     }
 
-    function checkAndShowOverlay() {
-        if (!window.ApiClient || !window.Dashboard) return;
+    /* ── Check versions via API ────────────────────────────────── */
 
-        var videoPlayer = document.querySelector('video');
-        if (!videoPlayer) return;
-
+    function checkVersions() {
         var itemId = getCurrentItemId();
-        if (!itemId) return;
-
-        var overlay = createOverlay();
-        overlay.dataset.currentItemId = itemId;
+        if (!itemId || !window.ApiClient) return;
+        currentItemId = itemId;
 
         var apiClient = window.ApiClient;
         apiClient.getJSON(apiClient.getUrl('SpiderNoir/versions/' + itemId)).then(function (result) {
+            var btn = document.querySelector('.' + BTN_CLASS);
+            if (!btn) return;
+
             if (!result.hasVersions) {
-                overlay.classList.remove('visible');
+                btn.style.display = 'none';
                 return;
             }
 
-            var menu = overlay.querySelector('.sn-menu');
-            var btn = overlay.querySelector('.sn-toggle-btn');
-
-            // Check if current version is Noir
+            btn.style.display = '';
             var isNoir = result.currentVersion === 'noir';
             btn.classList.toggle('active', isNoir);
 
-            menu.querySelectorAll('.sn-menu-item').forEach(function (item) {
-                var version = item.dataset.version;
-                var check = item.querySelector('.sn-check');
-                check.classList.toggle('hidden', version !== result.currentVersion);
-            });
-
-            overlay.classList.add('visible');
+            var menu = document.getElementById(MENU_ID);
+            if (menu) {
+                menu.querySelectorAll('.sn-menu-item').forEach(function (item) {
+                    var version = item.dataset.version;
+                    var check = item.querySelector('.sn-check');
+                    check.classList.toggle('hidden', version !== result.currentVersion);
+                });
+            }
         }).catch(function () {
-            overlay.classList.remove('visible');
+            var btn = document.querySelector('.' + BTN_CLASS);
+            if (btn) btn.style.display = 'none';
         });
     }
 
-    function getCurrentItemId() {
-        var params = new URLSearchParams(window.location.search);
-        var id = params.get('id');
-        if (id) return id;
-
-        var playerWrapper = document.querySelector('.videoPlayerContainer');
-        if (playerWrapper && playerWrapper.dataset.itemId) return playerWrapper.dataset.itemId;
-
-        var nowPlayingItem = document.querySelector('.nowPlayingBar');
-        if (nowPlayingItem && nowPlayingItem.dataset.itemId) return nowPlayingItem.dataset.itemId;
-
-        return null;
-    }
+    /* ── Version switching ─────────────────────────────────────── */
 
     function switchVersion(itemId, targetVersion) {
         var apiClient = window.ApiClient;
@@ -246,7 +291,8 @@
                         StartPositionTicks: Math.round(currentTime * 10000000)
                     });
                 } else {
-                    window.location.reload();
+                    window.location.href = window.location.href.split('?')[0]
+                        + '?id=' + itemId + '&version=' + targetVersion;
                 }
 
                 Dashboard.showLoadingMsg();
@@ -260,20 +306,68 @@
         });
     }
 
+    /* ── MutationObserver setup ────────────────────────────────── */
+
+    function setupObserver() {
+        if (observer) observer.disconnect();
+
+        observer = new MutationObserver(function () {
+            var osd = document.querySelector('.videoOsdBottom');
+            var buttonsBar = document.querySelector('.buttons.focuscontainer-x');
+            var playerPage = document.querySelector('#videoOsdPage');
+
+            if (osd && buttonsBar && playerPage) {
+                insertIntoOsd();
+
+                // Re-check when OSD visibility changes
+                if (!osd.classList.contains('hide')) {
+                    var newId = getCurrentItemId();
+                    if (newId && newId !== currentItemId) {
+                        currentItemId = newId;
+                        checkVersions();
+                    }
+                }
+            }
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'data-itemid']
+        });
+    }
+
+    /* ── Playback event listeners ──────────────────────────────── */
+
+    function setupPlaybackEvents() {
+        if (window.Events && window.ApiClient) {
+            window.Events.on(window.ApiClient, 'playbackstart', function () {
+                setTimeout(checkVersions, 500);
+            });
+            window.Events.on(window.ApiClient, 'playbackstop', function () {
+                var btn = document.querySelector('.' + BTN_CLASS);
+                if (btn) btn.style.display = 'none';
+            });
+        }
+    }
+
+    /* ── Init ──────────────────────────────────────────────────── */
+
     function init() {
         injectStyles();
-        createOverlay();
+        setupObserver();
+        setupPlaybackEvents();
 
-        var checkInterval = setInterval(function () {
-            checkAndShowOverlay();
-        }, 2000);
-
-        setTimeout(function () {
-            clearInterval(checkInterval);
-        }, 60000);
-
+        // Also check on visibility change (tab switch)
         document.addEventListener('visibilitychange', function () {
-            if (!document.hidden) checkAndShowOverlay();
+            if (!document.hidden && document.querySelector('#videoOsdPage')) {
+                var newId = getCurrentItemId();
+                if (newId && newId !== currentItemId) {
+                    currentItemId = newId;
+                    checkVersions();
+                }
+            }
         });
     }
 
